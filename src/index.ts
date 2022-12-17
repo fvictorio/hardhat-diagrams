@@ -24,27 +24,33 @@ task("diagram:flowchart")
       }: { sourceNames: string[] | undefined; includeLibraries: boolean },
       { run, config }
     ) => {
-      const sourcePaths = await run(
+      const sourcePaths: string[] = await run(
         taskNames.TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS
       );
 
-      const sourceNames =
+      const sourceNames: string[] =
         sourceNamesParam ??
         (await run(taskNames.TASK_COMPILE_SOLIDITY_GET_SOURCE_NAMES, {
           sourcePaths,
         }));
 
-      const graph = await run(
+      const graph: DependencyGraph = await run(
         taskNames.TASK_COMPILE_SOLIDITY_GET_DEPENDENCY_GRAPH,
         {
           sourceNames,
         }
       );
 
-      const mermaidSource = generateMermaidSource(graph, config.paths, {
-        includeLibraries,
-        ignore: config.diagrams.ignore,
-      });
+      const mermaidSource = generateMermaidSource(
+        sourceNames,
+        graph,
+        config.paths,
+        {
+          includeLibraries,
+          ignore: config.diagrams.ignore,
+          getCssClass: config.diagrams.getCssClass,
+        }
+      );
 
       const htmlTemplate = fs
         .readFileSync(path.join(__dirname, "flowchart-template.html"))
@@ -65,11 +71,13 @@ task("diagram:flowchart")
   );
 
 function generateMermaidSource(
+  sourceNames: string[],
   graph: DependencyGraph,
   paths: HardhatConfig["paths"],
   options: {
     includeLibraries: boolean;
     ignore?: (file: ResolvedFile) => boolean;
+    getCssClass?: (file: ResolvedFile) => string | undefined;
   }
 ) {
   let id = 0;
@@ -87,7 +95,10 @@ function generateMermaidSource(
     return sourceNameToId[sourceName];
   }
 
-  for (const file of graph.getResolvedFiles()) {
+  const files = graph.getResolvedFiles()
+    .filter(file => sourceNames.includes(file.sourceName))
+
+  for (const file of files) {
     if (file.library !== undefined) {
       continue;
     }
@@ -98,6 +109,11 @@ function generateMermaidSource(
 
     // include node because it might not import anything
     mermaidSource.push(`${fileNodeId}["${file.sourceName}"]`);
+
+    const cssClass = options.getCssClass?.(file);
+    if (cssClass !== undefined) {
+      mermaidSource.push(`class ${fileNodeId} ${cssClass}`);
+    }
 
     const deps = graph.getDependencies(file);
     for (const dep of deps) {
@@ -115,7 +131,12 @@ function generateMermaidSource(
         `${fileNodeId}["${file.sourceName}"] --> ${depNodeId}["${dep.sourceName}"]`
       );
       if (isLibrary) {
-        mermaidSource.push(`class ${depNodeId} cssLibrary`);
+        mermaidSource.push(`class ${depNodeId} library`);
+      } else {
+        const cssClass = options.getCssClass?.(dep);
+        if (cssClass !== undefined) {
+          mermaidSource.push(`class ${depNodeId} ${cssClass}`);
+        }
       }
     }
   }

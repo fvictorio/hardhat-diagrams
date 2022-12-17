@@ -11,6 +11,7 @@ declare module "hardhat/types/config" {
   export interface HardhatConfig {
     diagrams: {
       ignore?: (file: ResolvedFile) => boolean;
+      getCssClass?: (file: ResolvedFile) => string | undefined;
     };
   }
 }
