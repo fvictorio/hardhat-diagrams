@@ -1,11 +1,17 @@
 import fs from "fs";
-import { task } from "hardhat/config";
+import { extendConfig, task } from "hardhat/config";
 import * as taskNames from "hardhat/builtin-tasks/task-names";
-import { DependencyGraph, HardhatConfig } from "hardhat/types";
+import { DependencyGraph, HardhatConfig, ResolvedFile } from "hardhat/types";
 import mkdirp from "mkdirp";
 import open from "open";
 import os from "os";
 import path from "path";
+
+import "./type-extensions";
+
+extendConfig((config, userConfig) => {
+  config.diagrams = userConfig.diagrams ?? {};
+});
 
 task("diagram:flowchart")
   .addOptionalVariadicPositionalParam("sourceNames")
@@ -37,6 +43,7 @@ task("diagram:flowchart")
 
       const mermaidSource = generateMermaidSource(graph, config.paths, {
         includeLibraries,
+        ignore: config.diagrams.ignore,
       });
 
       const htmlTemplate = fs
@@ -60,7 +67,10 @@ task("diagram:flowchart")
 function generateMermaidSource(
   graph: DependencyGraph,
   paths: HardhatConfig["paths"],
-  options: { includeLibraries: boolean }
+  options: {
+    includeLibraries: boolean;
+    ignore?: (file: ResolvedFile) => boolean;
+  }
 ) {
   let id = 0;
   let sourceNameToId: Record<string, string> = {};
@@ -68,17 +78,26 @@ function generateMermaidSource(
 
   mermaidSource.push("graph LR");
 
+  function getNodeId(sourceName: string): string {
+    if (sourceNameToId[sourceName] === undefined) {
+      sourceNameToId[sourceName] = `Node${id}`;
+      id++;
+    }
+
+    return sourceNameToId[sourceName];
+  }
+
   for (const file of graph.getResolvedFiles()) {
     if (file.library !== undefined) {
       continue;
     }
-    if (sourceNameToId[file.sourceName] === undefined) {
-      sourceNameToId[file.sourceName] = `Node${id}`;
-      id++;
+    if (options.ignore?.(file) === true) {
+      continue;
     }
-    mermaidSource.push(
-      `${sourceNameToId[file.sourceName]}["${file.sourceName}"]`
-    );
+    const fileNodeId = getNodeId(file.sourceName);
+
+    // include node because it might not import anything
+    mermaidSource.push(`${fileNodeId}["${file.sourceName}"]`);
 
     const deps = graph.getDependencies(file);
     for (const dep of deps) {
@@ -86,21 +105,17 @@ function generateMermaidSource(
       if (!options.includeLibraries && isLibrary) {
         continue;
       }
-
-      if (sourceNameToId[dep.sourceName] === undefined) {
-        sourceNameToId[dep.sourceName] = `Node${id}`;
-        id++;
+      if (options.ignore?.(dep) === true) {
+        continue;
       }
 
+      const depNodeId = getNodeId(dep.sourceName);
+
       mermaidSource.push(
-        `${sourceNameToId[file.sourceName]}["${file.sourceName}"] --> ${
-          sourceNameToId[dep.sourceName]
-        }["${dep.sourceName}"]`
+        `${fileNodeId}["${file.sourceName}"] --> ${depNodeId}["${dep.sourceName}"]`
       );
       if (isLibrary) {
-        mermaidSource.push(
-          `class ${sourceNameToId[dep.sourceName]} cssLibrary`
-        );
+        mermaidSource.push(`class ${depNodeId} cssLibrary`);
       }
     }
   }
