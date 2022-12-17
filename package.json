@@ -1,12 +1,12 @@
 {
-  "name": "hardhat-ts-plugin-boilerplate",
+  "name": "@fvictorio/hardhat-diagrams",
   "version": "0.0.1",
-  "description": "Hardhat TypeScript plugin boilerplate",
-  "repository": "github:nomiclabs/hardhat-ts-plugin-boilerplate",
-  "author": "Nomic Labs LLC",
+  "description": "Hardhat Diagrams",
+  "repository": "github:fvictorio/hardhat-diagrams",
+  "author": "Franco Victorio",
   "license": "MIT",
-  "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "keywords": [
     "ethereum",
     "smart-contracts",
@@ -18,11 +18,12 @@
     "lint": "tslint --config tslint.json --project tsconfig.json",
     "test": "mocha --exit --recursive 'test/**/*.test.ts'",
     "build": "tsc",
+    "postbuild": "cp src/flowchart-template.html dist",
     "watch": "tsc -w",
     "prepublishOnly": "npm run build"
   },
   "files": [
-    "dist/src/",
+    "dist/",
     "src/",
     "LICENSE",
     "README.md"
@@ -30,6 +31,7 @@
   "devDependencies": {
     "@types/chai": "^4.1.7",
     "@types/fs-extra": "^5.0.4",
+    "@types/mkdirp": "^1.0.2",
     "@types/mocha": "^5.2.6",
     "@types/node": "^8.10.38",
     "chai": "^4.2.0",
@@ -44,5 +46,9 @@
   },
   "peerDependencies": {
     "hardhat": "^2.0.0"
+  },
+  "dependencies": {
+    "mkdirp": "^1.0.4",
+    "open": "^8.4.0"
   }
 }

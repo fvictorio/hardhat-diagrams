@@ -1,49 +1,109 @@
-import { extendConfig, extendEnvironment } from "hardhat/config";
-import { lazyObject } from "hardhat/plugins";
-import { HardhatConfig, HardhatUserConfig } from "hardhat/types";
+import fs from "fs";
+import { task } from "hardhat/config";
+import * as taskNames from "hardhat/builtin-tasks/task-names";
+import { DependencyGraph, HardhatConfig } from "hardhat/types";
+import mkdirp from "mkdirp";
+import open from "open";
+import os from "os";
 import path from "path";
 
-import { ExampleHardhatRuntimeEnvironmentField } from "./ExampleHardhatRuntimeEnvironmentField";
-// This import is needed to let the TypeScript compiler know that it should include your type
-// extensions in your npm package's types file.
-import "./type-extensions";
+task("diagram:flowchart")
+  .addOptionalVariadicPositionalParam("sourceNames")
+  .addFlag("includeLibraries")
+  .setAction(
+    async (
+      {
+        sourceNames: sourceNamesParam,
+        includeLibraries,
+      }: { sourceNames: string[] | undefined; includeLibraries: boolean },
+      { run, config }
+    ) => {
+      const sourcePaths = await run(
+        taskNames.TASK_COMPILE_SOLIDITY_GET_SOURCE_PATHS
+      );
 
-extendConfig(
-  (config: HardhatConfig, userConfig: Readonly<HardhatUserConfig>) => {
-    // We apply our default config here. Any other kind of config resolution
-    // or normalization should be placed here.
-    //
-    // `config` is the resolved config, which will be used during runtime and
-    // you should modify.
-    // `userConfig` is the config as provided by the user. You should not modify
-    // it.
-    //
-    // If you extended the `HardhatConfig` type, you need to make sure that
-    // executing this function ensures that the `config` object is in a valid
-    // state for its type, including its extensions. For example, you may
-    // need to apply a default value, like in this example.
-    const userPath = userConfig.paths?.newPath;
+      const sourceNames =
+        sourceNamesParam ??
+        (await run(taskNames.TASK_COMPILE_SOLIDITY_GET_SOURCE_NAMES, {
+          sourcePaths,
+        }));
 
-    let newPath: string;
-    if (userPath === undefined) {
-      newPath = path.join(config.paths.root, "newPath");
-    } else {
-      if (path.isAbsolute(userPath)) {
-        newPath = userPath;
-      } else {
-        // We resolve relative paths starting from the project's root.
-        // Please keep this convention to avoid confusion.
-        newPath = path.normalize(path.join(config.paths.root, userPath));
+      const graph = await run(
+        taskNames.TASK_COMPILE_SOLIDITY_GET_DEPENDENCY_GRAPH,
+        {
+          sourceNames,
+        }
+      );
+
+      const mermaidSource = generateMermaidSource(graph, config.paths, {
+        includeLibraries,
+      });
+
+      const htmlTemplate = fs
+        .readFileSync(path.join(__dirname, "flowchart-template.html"))
+        .toString();
+
+      const htmlSource = htmlTemplate.replace(
+        "%MERMAID_SOURCE%",
+        mermaidSource
+      );
+
+      const pathToHtml = path.resolve(config.paths.cache, "graph.html");
+
+      await mkdirp(config.paths.cache);
+      fs.writeFileSync(pathToHtml, htmlSource);
+
+      await open(pathToHtml);
+    }
+  );
+
+function generateMermaidSource(
+  graph: DependencyGraph,
+  paths: HardhatConfig["paths"],
+  options: { includeLibraries: boolean }
+) {
+  let id = 0;
+  let sourceNameToId: Record<string, string> = {};
+  let mermaidSource: string[] = [];
+
+  mermaidSource.push("graph LR");
+
+  for (const file of graph.getResolvedFiles()) {
+    if (file.library !== undefined) {
+      continue;
+    }
+    if (sourceNameToId[file.sourceName] === undefined) {
+      sourceNameToId[file.sourceName] = `Node${id}`;
+      id++;
+    }
+    mermaidSource.push(
+      `${sourceNameToId[file.sourceName]}["${file.sourceName}"]`
+    );
+
+    const deps = graph.getDependencies(file);
+    for (const dep of deps) {
+      const isLibrary = dep.library !== undefined;
+      if (!options.includeLibraries && isLibrary) {
+        continue;
+      }
+
+      if (sourceNameToId[dep.sourceName] === undefined) {
+        sourceNameToId[dep.sourceName] = `Node${id}`;
+        id++;
+      }
+
+      mermaidSource.push(
+        `${sourceNameToId[file.sourceName]}["${file.sourceName}"] --> ${
+          sourceNameToId[dep.sourceName]
+        }["${dep.sourceName}"]`
+      );
+      if (isLibrary) {
+        mermaidSource.push(
+          `class ${sourceNameToId[dep.sourceName]} cssLibrary`
+        );
       }
     }
-
-    config.paths.newPath = newPath;
   }
-);
 
-extendEnvironment((hre) => {
-  // We add a field to the Hardhat Runtime Environment here.
-  // We use lazyObject to avoid initializing things until they are actually
-  // needed.
-  hre.example = lazyObject(() => new ExampleHardhatRuntimeEnvironmentField());
-});
+  return mermaidSource.join(os.EOL);
+}

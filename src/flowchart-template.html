@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title></title>
+</head>
+<body>
+<style>
+.hidden {
+  visibility: hidden;
+}
+.cssLibrary > rect {
+  fill: #ffc889 !important;
+}
+</style>
+<pre class="mermaid hidden">
+%MERMAID_SOURCE%
+</pre>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7.7.0"></script>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@9/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({
+    startOnLoad: false,
+    maxTextSize: 1_000_000
+  })
+  await mermaid.init({}, '.mermaid');
+  document.querySelector(".mermaid").classList.remove("hidden")
+
+  var svgs = d3.selectAll(".mermaid svg");
+  svgs.each(function() {
+    var svg = d3.select(this);
+    svg.html("<g>" + svg.html() + "</g>");
+    var inner = svg.select("g");
+    var zoom = d3.zoom().on("zoom", function(event) {
+      inner.attr("transform", event.transform);
+    });
+    svg.call(zoom);
+  });
+</script>
+</body>
+</html>
